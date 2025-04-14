@@ -1,5 +1,5 @@
 import requests
-from logger import logger
+from utils.logger import logger
 
 def tenantid_lookup(domain: str) -> str:
     try:

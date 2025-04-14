@@ -2,9 +2,9 @@ import asyncio, requests
 import xml.etree.ElementTree as ET
 from typing import Dict, Optional
 
-from relay_client import RelaySettings
-from servicebus_client import ServiceBusWebSocketClient
-from logger import logger
+from utils.relay_client import RelayManager
+from utils.servicebus_client import ServiceBusWebSocketClient
+from utils.logger import logger
 
 xml_bootstrap = """
 <BootstrapRequest xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalerDataModel" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
@@ -52,27 +52,6 @@ class Settings:
         self.service_path = service_path
         self.cert_file = cert_file
         self.key_file = key_file
-
-class RelayManager:
-    def __init__(self):
-        self.relays: Dict[str, RelaySettings] = {}
-        self.lock = asyncio.Lock()
-
-    async def add_relay(self, relay_id: str, settings: RelaySettings):
-        async with self.lock:
-            if relay_id not in self.relays:
-                self.relays[relay_id] = settings
-                return True
-            return False
-
-    async def get_relay(self, relay_id: str) -> Optional[RelaySettings]:
-        async with self.lock:
-            return self.relays.get(relay_id)
-
-    async def remove_relay(self, relay_id: str):
-        async with self.lock:
-            if relay_id in self.relays:
-                del self.relays[relay_id]
 
 class PTAAgent:
     def __init__(self, cert_file: str, keyfile: str, tenantid: str) -> None:

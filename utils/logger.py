@@ -33,20 +33,17 @@ def configure_custom_logger(logs_dir, color: Optional[str] = None, thread_id: Op
     if not os.path.exists(logs_dir):
         os.makedirs(logs_dir)
     logs_dir = os.path.join(os.getcwd(), logs_dir)
-    logger = logging.getLogger('custom_logger')
+    logger = logging.getLogger(f'pyPTAagent_{thread_id}')
     logger.setLevel(default_level)
     formatter = f'%(asctime)s - Thread {thread_id} - %(levelname)s - %(message)s'
-    # File handler
     log_file = os.path.join(logs_dir, 'app.log')
     file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024, backupCount=10)
     file_handler.setFormatter(logging.Formatter(formatter))
     logger.addHandler(file_handler)
-    
-    # Console handler avec couleur
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(ColoredFormatter(formatter, color=color))
     logger.addHandler(console_handler)
     
     return logger
 
-logger = configure_custom_logger(logs_dir="./logs")
+logger = configure_custom_logger(logs_dir=os.getenv('LOG_PATH', "./logs"))

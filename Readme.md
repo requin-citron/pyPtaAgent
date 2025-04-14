@@ -3,13 +3,28 @@
 ## Usage
 
 ```bash
-python3 main.py -c cert.pem -k key.pem -d azuretest.fr
+$ python3 pyPTaAgent.py -c cert.pem -k key.pem -d azuretest.fr
+```
+
+## Setup
+
+### Locally
+```bash
+$ python3 -m pip install -r requirements.txt
+```
+
+### Docker
+```bash
+$ docker build -t pyptaagent .
+$ docker run pyptaagent --help
+  
+$ docker run -v /host/path/containing/certificates/:/app/shared pyptaagent -c ./shared/cert.pem -k ./shared/key.pem -d example.com
 ```
 
 ## Help
 ```bash
-$ python3 main.py --help
-usage: main.py [-h] -c CERT -k KEY (-t TENANTID | -d DOMAIN) [-v]
+$ python3 pyPTaAgent.py --help
+usage: pyPTaAgent.py [-h] -c CERT -k KEY (-t TENANTID | -d DOMAIN) [-v]
 
 PTA Agent - Azure Service Bus Connector
 

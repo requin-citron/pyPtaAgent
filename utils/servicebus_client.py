@@ -1,11 +1,9 @@
-from logger import configure_custom_logger
-
-import websockets, ssl, hashlib, urllib, base64, hmac, uuid, time, asyncio
-from typing import Optional
+import websockets, ssl, hashlib, urllib, base64, hmac, uuid, asyncio, typing
 
 from amqp import *
 from xml_parser import *
-from relay_client import RelaySettings, RelayWebSocketClient
+from utils.logger import configure_custom_logger
+from utils.relay_client import RelaySettings, RelayWebSocketClient
 
 COLORS = [
     '\033[95m',  # Magenta
@@ -34,7 +32,7 @@ class ServiceBusWebSocketClient:
         self.key_file = key_file
         self.shared_access_key_name = shared_access_key_name
         self.shared_access_key = shared_access_key
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.ws: typing.Optional[websockets.WebSocketClientProtocol] = None
         self.service_path = service_path
         self.oneway_send_message = 0   
         self.relay_manager = relay_manager
@@ -147,44 +145,50 @@ class ServiceBusWebSocketClient:
         Other message types are logged and skipped. The loop runs indefinitely until an
         exception occurs, which is then logged.
         """
-        relays = dict()
         try:
             while True:
                 await self.send(AMQPEmpty().to_byte_array(), 'AMQP Empty')
                 parsed = await self.recv('AMQP response')
-                print(parsed.to_dict())
-
+                
                 if parsed['Type'] is None:
                     continue
 
                 match parsed['Type']:
                     case 'AMQP Transfer':
-                        key, _      = parse_amqp_item(await self.ws.recv(), 0)
-                        oneway_send_key = 0x75
-                        self.logger.warning("Received rawContent: "+'\n'+str(key))
-                        bin_oneway_send = key.get(oneway_send_key, None)
-                        if not bin_oneway_send:
-                            continue
+                        try:                        
+                            key, _ = parse_amqp_item(await self.ws.recv(), 0)
+                            oneway_send_key = 0x75
+                            self.logger.info("Received rawContent: "+'\n'+str(key))
+                            bin_oneway_send = key.get(oneway_send_key, None)
+                            if not bin_oneway_send:
+                                continue
 
-                        await self.send(AMQPDisposition(True, 0x24, self.oneway_send_message).to_byte_array())
-                        self.oneway_send_message += 1
-                        
-                        parsed = parse_relay_binary_xml(bin_oneway_send)
-                        relay_id = parsed['Id']
-                        settings = RelaySettings(parsed, self.cert_file, self.key_file)
-                        if await self.relay_manager.add_relay(relay_id, settings):
-                            self.logger.warning(f"Creating relay {relay_id}")
-                            await self.send(RelayedAccept(relay_id).to_byte_array())
-                            agent = RelayWebSocketClient(settings, self.thread_id)
-                            asyncio.create_task(agent.run())
-                        else:
-                            self.logger.warning(f"Relay {relay_id} already exists")
+                            await self.send(AMQPDisposition(True, 0x24, self.oneway_send_message).to_byte_array())
+                            self.oneway_send_message += 1
+                            
+                            parsed = parse_relay_binary_xml(bin_oneway_send)
+                            relay_id = parsed['Id']
+                            settings = RelaySettings(parsed, self.cert_file, self.key_file)
+                            if await self.relay_manager.add_relay(relay_id, settings):
+                                self.logger.warning(f"Creating relay {relay_id}")
+                                await self.send(RelayedAccept(relay_id).to_byte_array())
+                                agent = RelayWebSocketClient(settings, self.thread_id, self.logger)
+                                asyncio.create_task(agent.run())
+                            else:
+                                self.logger.info(f"Relay {relay_id} already exists")
+                        except Exception as ex:
+                            self.logger.error(f"Error while processing AMQP Transfer ({type(ex).__name__}): {ex}")
                     case _:
                         self.logger.info(f"Skipping {parsed['Type']}")
                         continue
-                time.sleep(1)
-        except Exception as e:
-            self.logger.error(e)
+                await asyncio.sleep(1)
+        except websockets.exceptions.ConnectionClosed:
+            self.logger.info("Connection closed by peer")
+        except Exception as ex:
+            self.logger.error(f"Main loop error ({type(ex).__name__}): {ex}")
+        finally:
+            await self.ws.close()
+        
             
     async def run(self, thread_id: int) -> None:
         self.logger.info(f"Connecting with thread N°{thread_id}")
@@ -195,4 +199,4 @@ class ServiceBusWebSocketClient:
 
         self.logger.info(f"Looping with thread N°{thread_id}")
         await self.loop()
-        self.logger.info("Ended with thread N°{thread_id}")
+        self.logger.info(f"Loop ended for thread N°{thread_id}")

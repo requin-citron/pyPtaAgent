@@ -1,7 +1,7 @@
+import logging
 import ssl
 from typing import Optional
 from websockets import WebSocketClientProtocol
-from logger import configure_custom_logger
 
 COLORS = [
     '\033[95m',  # Magenta
@@ -28,21 +28,50 @@ class RelaySettings:
     def __str__(self):
         return f"RelaySettings(id={self.relay_id}, host={self.host_name})"
 
+class RelayManager:
+    """
+    Manages a collection of RelaySettings identified by relay IDs.
+    Provides thread-safe methods to add, retrieve, and remove relay settings.
+    """
+
+    def __init__(self):
+        self.relays: Dict[str, RelaySettings] = {}
+        self.lock = asyncio.Lock()
+
+    async def add_relay(self, relay_id: str, settings: RelaySettings):
+        async with self.lock:
+            if relay_id not in self.relays:
+                self.relays[relay_id] = settings
+                return True
+            return False
+
+    async def get_relay(self, relay_id: str) -> Optional[RelaySettings]:
+        async with self.lock:
+            return self.relays.get(relay_id)
+
+    async def remove_relay(self, relay_id: str):
+        async with self.lock:
+            if relay_id in self.relays:
+                del self.relays[relay_id]
+
+import asyncio
 
 class RelayWebSocketClient:
     def __init__(
         self,
         settings: RelaySettings,
-        thread_id: int = 0
+        thread_id: int = 0,
+        logger: logging.Logger = None
     ):
         self.settings = settings
         self.thread_id = str(thread_id)
-        self.color = COLORS[thread_id % len(COLORS)]
-        self.logger = configure_custom_logger(logs_dir="./logs", color=self.color, thread_id=self.thread_id)
+        self.color = COLORS[int(thread_id) % len(COLORS)]
+        self.logger = logger
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
-    
+
     async def run(self) -> None:
-        print('TODO')
-        pass
+        self.logger.info(f"Starting Relay listener on settings {self.settings}")
+        while 1:
+            await asyncio.sleep(1)
         # ToDo
         # https://github.com/secureworks/PTAAgentDump/blob/main/PTAAgent.cs#L323-L448

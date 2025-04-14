@@ -1,6 +1,10 @@
+#!/bin/env python3
+# Coded by @Vozec & @KlemouLeZoZo
+# Inspired from https://github.com/secureworks/PTAAgentDump
+
 import argparse, asyncio, logging
-from pta_agent import PTAAgent
-from logger import logger, update_level
+from utils.pta_agent import PTAAgent
+from utils.logger import logger, update_level
 from utils import tenantid_lookup
 
 def setup_logging(verbose: bool = False):
