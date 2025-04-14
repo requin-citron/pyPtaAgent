@@ -1,10 +1,12 @@
 from logger import configure_custom_logger
 
-import websockets, ssl, hashlib, urllib, base64, hmac, uuid, time
+import websockets, ssl, hashlib, urllib, base64, hmac, uuid, time, asyncio
 from typing import Optional
-from amqp import *
 
-# Liste de couleurs ANSI disponibles
+from amqp import *
+from xml_parser import *
+from relay_client import RelaySettings, RelayWebSocketClient
+
 COLORS = [
     '\033[95m',  # Magenta
     '\033[96m',  # Cyan
@@ -13,6 +15,7 @@ COLORS = [
     '\033[92m',  # Vert
     '\033[91m',  # Rouge
 ]
+
 
 class ServiceBusWebSocketClient:
     def __init__(
@@ -23,6 +26,7 @@ class ServiceBusWebSocketClient:
         shared_access_key_name: str,
         shared_access_key: str,
         service_path: str,
+        relay_manager,
         thread_id: int = 0
     ):
         self.namespace = namespace
@@ -33,6 +37,7 @@ class ServiceBusWebSocketClient:
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.service_path = service_path
         self.oneway_send_message = 0   
+        self.relay_manager = relay_manager
         self.thread_id = str(thread_id)
         self.color = COLORS[thread_id % len(COLORS)]
         self.logger = configure_custom_logger(logs_dir="./logs", color=self.color, thread_id=self.thread_id)
@@ -133,6 +138,15 @@ class ServiceBusWebSocketClient:
         await self.send(AMQPFlow(handleOut).to_byte_array(), 'AMQP Flow (out)')
 
     async def loop(self) -> None:
+        """
+        Continuously send and receive messages over the websocket connection.
+        
+        This function sends an empty AMQP message, receives the response, and processes
+        it based on its type. If the parsed message type is 'AMQP Transfer', it handles
+        the oneway send key, increments the message counter, and processes the XML content.
+        Other message types are logged and skipped. The loop runs indefinitely until an
+        exception occurs, which is then logged.
+        """
         relays = dict()
         try:
             while True:
@@ -144,48 +158,29 @@ class ServiceBusWebSocketClient:
                     continue
 
                 match parsed['Type']:
-                    case 'AMQP Flow':
-                        pass
-                    case 'AMQP Attach':
-                        pass
-                    case 'AMQP Detach':
-                        pass
                     case 'AMQP Transfer':
-                        pass
-                        # logger.critical(f"AMQP Transfer {'='*30}")
-                        # if parsed['Size'] > len(buffer):
-                        #     key, pos      = parse_amqp_item(await self.ws.recv(), 0)
-                        #     oneway_send_key = 0x75
-                        #     logger.warning("Received rawContent: "+'\n'+str(key)+str(pos))
+                        key, _      = parse_amqp_item(await self.ws.recv(), 0)
+                        oneway_send_key = 0x75
+                        self.logger.warning("Received rawContent: "+'\n'+str(key))
+                        bin_oneway_send = key.get(oneway_send_key, None)
+                        if not bin_oneway_send:
+                            continue
 
-                        #     if key.get(oneway_send_key) is not None:
-                        #         disposition = AMQPDisposition(True, 0x24, self.oneway_send_message).to_byte_array()
-                        #         logger.info(f"Sending AMQP Disposition({len(disposition)}): {disposition.hex()}")
-                        #         await self.ws.send(disposition)
-                        #         self.oneway_send_message += 1
-
-                        #         bin_oneway_send = key.get(oneway_send_key)
-                        #         logger.warning("parse_relay_binary_xml")
-                        #         oneway_send = parse_relay_binary_xml(bin_oneway_send, 0, True)
-
-                        #         host_name = oneway_send["InstanceDnsAddress"]
-                        #         relay_id  = oneway_send["Id"]
-
-                        #         new_connection = True
-
-                        #         if relays.get(relay_id) is not None:
-                        #             raise Exception("Not Imp")
-                                
-                        #         if new_connection:
-                        #             relays[relay_id] = RelaySettings(oneway_send, self.cert_file, self.key_file)
-                        #             logger.warning(f"start_relay_listener {'#'*30}")
-                        #             asyncio.gather(self.start_relay_listener(relays[relay_id]))
-                        #             # new Thread(StartRelayListener).Start(rs);
-                        #     else:
-                        #         logger.warning("Wrong key in AMQP Transfer packet")
-                            
+                        await self.send(AMQPDisposition(True, 0x24, self.oneway_send_message).to_byte_array())
+                        self.oneway_send_message += 1
+                        
+                        parsed = parse_relay_binary_xml(bin_oneway_send)
+                        relay_id = parsed['Id']
+                        settings = RelaySettings(parsed, self.cert_file, self.key_file)
+                        if await self.relay_manager.add_relay(relay_id, settings):
+                            self.logger.warning(f"Creating relay {relay_id}")
+                            await self.send(RelayedAccept(relay_id).to_byte_array())
+                            agent = RelayWebSocketClient(settings, self.thread_id)
+                            asyncio.create_task(agent.run())
+                        else:
+                            self.logger.warning(f"Relay {relay_id} already exists")
                     case _:
-                        self.logger.info(f"Unknown message type: {parsed['Type']}")
+                        self.logger.info(f"Skipping {parsed['Type']}")
                         continue
                 time.sleep(1)
         except Exception as e:

@@ -1,6 +1,9 @@
-from .parser_type import ParsedMessage, parse_amqp_item, parse_amqp_list
-import base64
+from amqp.parser_type import ParsedMessage, parse_amqp_item, parse_amqp_list
+from xml_parser import XmlParser
+
+import base64, io
 from typing import Union
+import xml.etree.ElementTree as ET
 
 def parse_amqp_open(message, bytes_data, pos):
     message["Type"] = "AMQP Open"
@@ -198,341 +201,315 @@ def parse_bus_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
     else:
         return parse_amqp_frame(message_bytes)
 
-# import base64
-# from typing import Union, override
-# import xml.etree.ElementTree as ET
 
-# def parse_relay_binary_xml(bytes_data, pos=0, no_session=False):
-#     def parse_binary_xml_to_string(binary_data, session):
-#         xml_string = binary_data.decode('utf-8', errors='ignore')
-#         return xml_string
-        
-#     msg = ParsedMessage(bytes_data)
-#     msg.add("Type", "RelayMessage")
-    
-#     session = {} if not no_session else None
-#     if not no_session:
-#         info_size, pos = parse_multibyte_int31(bytes_data, pos)
-#         index = 0
-#         while pos < info_size:
-#             str_size, pos = parse_multibyte_int31(bytes_data, pos)
-#             if str_size > 0:
-#                 str_data = bytes_data[pos:pos + str_size].decode('utf-8')
-#             else:
-#                 str_data = ""
-#             session[index] = str_data
-#             pos += str_size
-#             index += 1
-    
-#     xml_bytes = bytes_data[pos:]
-#     xml_string = parse_binary_xml_to_string(xml_bytes, session)
-#     try:
-#         xml_root = ET.fromstring(xml_string)
-#         namespaces = {
-#             'a': "http://www.w3.org/2005/08/addressing",
-#             'b': "http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalingDataModel",
-#             'netrm': "http://schemas.microsoft.com/ws/2006/05/rm",
-#             'i': "http://www.w3.org/2001/XMLSchema-instance",
-#             'r': "http://schemas.xmlsoap.org/ws/2005/02/rm",
-#             's': "http://www.w3.org/2003/05/soap-envelope"
-#         }
-#         header_node = xml_root.find('.//s:Header', namespaces)
-#         if header_node is not None:
-#             for header in header_node:
-#                 msg.add(header.tag.split('}')[-1], header.text)
+def parse_relay_binary_xml(bytes_data, no_session={}):        
+    msg = ParsedMessage(bytes_data)
+    msg.add("Type", "RelayMessage")
+    xml_string = XmlParser(io.BytesIO(bytes_data)).unserialize()
+    try:
+        xml_root = ET.fromstring(xml_string)
+        namespaces = {
+            'a': "http://www.w3.org/2005/08/addressing",
+            'b': "http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalingDataModel",
+            'netrm': "http://schemas.microsoft.com/ws/2006/05/rm",
+            'i': "http://www.w3.org/2001/XMLSchema-instance",
+            'r': "http://schemas.xmlsoap.org/ws/2005/02/rm",
+            's': "http://www.w3.org/2003/05/soap-envelope",
+            'sb': "http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect"
+        }
+        header_node = xml_root.find('.//s:Header', namespaces)
+        if header_node is not None:
+            for header in header_node:
+                msg.add(header.tag.split('}')[-1], header.text)
 
-#         body_node = xml_root.find('.//s:Body', namespaces)
-#         if body_node is not None and body_node.text:
-#             msg.add("Body", body_node.text)
+        body_node = xml_root.find('.//s:Body', namespaces)
+        if body_node is not None and body_node.text:
+            msg.add("Body", body_node.text)
 
-#         if "Action" in msg.info:
-#             msg.add("Type", msg.info["Action"])
+        if "Action" in msg.info:
+            msg.add("Type", msg.info["Action"])
 
-#     except ET.ParseError as e:
-#         if session and session.get(0, "") == "Ping":
-#             msg.add("Type", "Ping")
+    except ET.ParseError as e:
+        if session and session.get(0, "") == "Ping":
+            msg.add("Type", "Ping")
 
-#     message_type = msg.info.get("Type", "")
-#     if message_type == "OnewaySend":
-#         """
-#         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
-#             <s:Header>
-#                 <a:Action s:mustUnderstand="1">OnewaySend</a:Action>
-#                 <RelayVia xmlns="http://schemas.microsoft.com/netservices/2009/05/servicebus/connect">sb://his-nam1-scus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</RelayVia>
-#                 <a:MessageID>655e645f-7e22-4368-bf77-c7a17520f929_G7</a:MessageID>
-#                 <a:To s:mustUnderstand="1">sb://his-nam1-scus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
-#             </s:Header>
-#             <s:Body>VgILAXME[redacted]QBAQE=</s:Body>
-#         </s:Envelope>
-#         """
-#         body = msg.info.get("Body", "")
-#         bin_body = base64.b64decode(body)  # Decode from base64
-#         relayed_xml_string = bin_body.decode('utf-8', errors='ignore')
-#         relayed_xml_root = ET.fromstring(relayed_xml_string)
+    message_type = msg.info.get("Type", "")
+    if message_type == "OnewaySend":
+        """
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+            <s:Header>
+                <a:Action s:mustUnderstand="1">OnewaySend</a:Action>
+                <RelayVia xmlns="http://schemas.microsoft.com/netservices/2009/05/servicebus/connect">sb://his-nam1-scus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</RelayVia>
+                <a:MessageID>655e645f-7e22-4368-bf77-c7a17520f929_G7</a:MessageID>
+                <a:To s:mustUnderstand="1">sb://his-nam1-scus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
+            </s:Header>
+            <s:Body>VgILAXME[redacted]QBAQE=</s:Body>
+        </s:Envelope>
+        """
+        body = msg.info.get("Body", "")
+        bin_body = base64.b64decode(body.encode())
+        relayed_xml_string = XmlParser(io.BytesIO(bin_body)).unserialize()
+        relayed_xml_root = ET.fromstring(relayed_xml_string)
+        """
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+            <s:Header>
+                <a:Action s:mustUnderstand="1">http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect/RelayedConnect</a:Action>
+                <a:To s:mustUnderstand="1">sb://his-nam1-ncus1.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
+            </s:Header>
+            <s:Body>
+                <RelayedConnect xmlns="http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect">
+                    <Id>39aadc47-3295-4a41-a886-51ad9e0cca37</Id>
+                    <IpAddress>2748520724</IpAddress>
+                    <IpPort>9352</IpPort>
+                    <HttpAddress>2748520724</HttpAddress>
+                    <HttpPort>80</HttpPort>
+                    <HttpsAddress>2748520724</HttpsAddress>
+                    <HttpsPort>443</HttpsPort>
+                    <InstanceDnsAddress>g17-prod-ch3-006-sb.servicebus.windows.net</InstanceDnsAddress>
+                </RelayedConnect>
+            </s:Body>
+        </s:Envelope>
+        """
+        relayed_connect = relayed_xml_root.find('.//sb:RelayedConnect', namespaces)
+        if relayed_connect is not None:
+            for param in relayed_connect:
+                key = param.tag.split('}')[-1]
+                value = param.text
+                msg.add(key, value)
 
-        
-#         """
-#         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
-#             <s:Header>
-#                 <a:Action s:mustUnderstand="1">http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect/RelayedConnect</a:Action>
-#                 <a:To s:mustUnderstand="1">sb://his-nam1-ncus1.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
-#             </s:Header>
-#             <s:Body>
-#                 <RelayedConnect xmlns="http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect">
-#                     <Id>39aadc47-3295-4a41-a886-51ad9e0cca37</Id>
-#                     <IpAddress>2748520724</IpAddress>
-#                     <IpPort>9352</IpPort>
-#                     <HttpAddress>2748520724</HttpAddress>
-#                     <HttpPort>80</HttpPort>
-#                     <HttpsAddress>2748520724</HttpsAddress>
-#                     <HttpsPort>443</HttpsPort>
-#                     <InstanceDnsAddress>g17-prod-ch3-006-sb.servicebus.windows.net</InstanceDnsAddress>
-#                 </RelayedConnect>
-#             </s:Body>
-#         </s:Envelope>
-#         """
-#         relayed_connect = relayed_xml_root.find('.//RelayedConnect', namespaces)
-#         if relayed_connect is not None:
-#             for param in relayed_connect:
-#                 key = param.tag.split('}')[-1]
-#                 value = param.text
-#                 if key in ["IpAddress", "HttpAddress", "HttpsAddress"]:
-#                     value = int_to_ip(int(value))
-#                 msg.add(key, value)
+    elif message_type == "RelayedAcceptReply":
+        """
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+            <s:Header>
+                <a:Action s:mustUnderstand="1">RelayedAcceptReply</a:Action>
+            </s:Header>
+            <s:Body>
+                <z:anyType xmlns:z="http://schemas.microsoft.com/2003/10/Serialization/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance"/>
+            </s:Body>
+        </s:Envelope>
+        """
+        pass  # As defined in the XML snippet
 
-#     elif message_type == "RelayedAcceptReply":
-#         """
-#         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
-#             <s:Header>
-#                 <a:Action s:mustUnderstand="1">RelayedAcceptReply</a:Action>
-#             </s:Header>
-#             <s:Body>
-#                 <z:anyType xmlns:z="http://schemas.microsoft.com/2003/10/Serialization/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance"/>
-#             </s:Body>
-#         </s:Envelope>
-#         """
-#         pass  # As defined in the XML snippet
+    elif message_type == "http://schemas.xmlsoap.org/ws/2005/02/rm/CreateSequence":
+        """
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+            <s:Header>
+                <a:Action s:mustUnderstand="1">http://schemas.xmlsoap.org/ws/2005/02/rm/CreateSequence</a:Action>
+                <a:MessageID>urn:uuid:7c4071d7-4bb0-4993-ae33-4d94ac4f844d</a:MessageID>
+                <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
+            </s:Header>
+            <s:Body>
+                <CreateSequence xmlns="http://schemas.xmlsoap.org/ws/2005/02/rm">
+                    <AcksTo>
+                        <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
+                    </AcksTo>
+                    <Offer>
+                        <Identifier>urn:uuid:da98a5eb-4130-427d-a1a3-09fe238623b4</Identifier>
+                    </Offer>
+                </CreateSequence>
+            </s:Body>
+        </s:Envelope>
+        """
+        msg["Type"] = "CreateSequence"
+        try:
+            identifier = xml_root.find('.//Identifier', namespaces).text
+            msg.add("Identifier", identifier)
+        except ET.ParseError:
+            pass
 
-#     elif message_type == "http://schemas.xmlsoap.org/ws/2005/02/rm/CreateSequence":
-#         """
-#         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
-#             <s:Header>
-#                 <a:Action s:mustUnderstand="1">http://schemas.xmlsoap.org/ws/2005/02/rm/CreateSequence</a:Action>
-#                 <a:MessageID>urn:uuid:7c4071d7-4bb0-4993-ae33-4d94ac4f844d</a:MessageID>
-#                 <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
-#             </s:Header>
-#             <s:Body>
-#                 <CreateSequence xmlns="http://schemas.xmlsoap.org/ws/2005/02/rm">
-#                     <AcksTo>
-#                         <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
-#                     </AcksTo>
-#                     <Offer>
-#                         <Identifier>urn:uuid:da98a5eb-4130-427d-a1a3-09fe238623b4</Identifier>
-#                     </Offer>
-#                 </CreateSequence>
-#             </s:Body>
-#         </s:Envelope>
-#         """
-#         msg["Type"] = "CreateSequence"
-#         try:
-#             identifier = xml_root.find('.//Identifier', namespaces).text
-#             msg.add("Identifier", identifier)
-#         except ET.ParseError:
-#             pass
+    elif message_type == "http://tempuri.org/IConnectorSignalingService/SignalConnector":
+        # Check TrafficProtocol within the body
+        try:
+            traffic_protocol = xml_root.find('.//TrafficProtocol', namespaces).text
+            if traffic_protocol == "Connect":
+                """
+                <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:r="http://schemas.xmlsoap.org/ws/2005/02/rm" xmlns:a="http://www.w3.org/2005/08/addressing">
+                    <s:Header>
+                        <r:AckRequested>
+                            <r:Identifier>urn:uuid:00000000-0000-0000-0000-000000000000</r:Identifier>
+                        </r:AckRequested>
+                        <r:Sequence s:mustUnderstand="1">
+                            <r:Identifier>urn:uuid:00000000-0000-0000-0000-000000000000</r:Identifier>
+                            <r:MessageNumber>1</r:MessageNumber>
+                        </r:Sequence>
+                        <a:Action s:mustUnderstand="1">http://tempuri.org/IConnectorSignalingService/SignalConnector</a:Action>
+                        <a:MessageID>urn:uuid:23f43182-7b11-4bbf-981a-8d0fc078b8c1</a:MessageID>
+                        <a:ReplyTo>
+                            <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
+                        </a:ReplyTo>
+                        <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
+                    </s:Header>
+                    <s:Body>
+                        <SignalConnector xmlns="http://tempuri.org/">
+                            <messageProperties xmlns:b="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalingDataModel" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+                                <RequestId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">2f2ab3af-5e56-45a7-865e-bb3243f06d00</RequestId>
+                                <SessionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">00000000-0000-0000-0000-000000000000</SessionId>
+                                <SubscriptionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">[redacted]</SubscriptionId>
+                                <TransactionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">9c3f0681-e562-4d1d-8f4c-9ef5357ba040</TransactionId>
+                                <b:OverrideServiceHostEnabled>true</b:OverrideServiceHostEnabled>
+                                <b:OverridenReturnHost>vm7-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:OverridenReturnHost>
+                                <b:OverridenReturnPort>443</b:OverridenReturnPort>
+                                <b:ReturnHost>vm7-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:ReturnHost>
+                                <b:ReturnPort>10100</b:ReturnPort>
+                                <b:TunnelContext>
+                                    <ConfigurationHash xmlns="">-139793387</ConfigurationHash>
+                                    <CorrelationId xmlns="">9c3f0681-e562-4d1d-8f4c-9ef5357ba040</CorrelationId>
+                                    <HasPayload xmlns="">false</HasPayload>
+                                    <ProtocolContext i:type="ConnectContext" xmlns="">
+                                        <TrafficProtocol>Connect</TrafficProtocol>
+                                        <ConnectionId>8457828f-e336-44bf-b967-4044b1478cc1</ConnectionId>
+                                    </ProtocolContext>
+                                </b:TunnelContext>
+                            </messageProperties>
+                        </SignalConnector>
+                    </s:Body>
+                </s:Envelope>
+                """
+                msg["Type"] = "SignalConnector"
+                msg.add("RequeIdentifierstId", xml_root.find('.//r:Identifier', namespaces).text)
+                msg.add("MessageNumber", xml_root.find('.//r:MessageNumber', namespaces).text)
+                msg.add("RequestId", xml_root.find('.//RequestId', namespaces).text)
+                msg.add("SessionId", xml_root.find('.//SessionId', namespaces).text)
+                msg.add("SubscriptionId", xml_root.find('.//SubscriptionId', namespaces).text)
+                msg.add("TransactionId", xml_root.find('.//TransactionId', namespaces).text)
+                msg.add("ConnectionId", xml_root.find('.//ConnectionId', namespaces).text)
+                msg.add("ReturnHost", xml_root.find('.//b:ReturnHost', namespaces).text)
+                msg.add("ReturnPort", xml_root.find('.//b:ReturnPort', namespaces).text)
 
-#     elif message_type == "http://tempuri.org/IConnectorSignalingService/SignalConnector":
-#         # Check TrafficProtocol within the body
-#         try:
-#             traffic_protocol = xml_root.find('.//TrafficProtocol', namespaces).text
-#             if traffic_protocol == "Connect":
-#                 """
-#                 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:r="http://schemas.xmlsoap.org/ws/2005/02/rm" xmlns:a="http://www.w3.org/2005/08/addressing">
-#                     <s:Header>
-#                         <r:AckRequested>
-#                             <r:Identifier>urn:uuid:00000000-0000-0000-0000-000000000000</r:Identifier>
-#                         </r:AckRequested>
-#                         <r:Sequence s:mustUnderstand="1">
-#                             <r:Identifier>urn:uuid:00000000-0000-0000-0000-000000000000</r:Identifier>
-#                             <r:MessageNumber>1</r:MessageNumber>
-#                         </r:Sequence>
-#                         <a:Action s:mustUnderstand="1">http://tempuri.org/IConnectorSignalingService/SignalConnector</a:Action>
-#                         <a:MessageID>urn:uuid:23f43182-7b11-4bbf-981a-8d0fc078b8c1</a:MessageID>
-#                         <a:ReplyTo>
-#                             <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
-#                         </a:ReplyTo>
-#                         <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
-#                     </s:Header>
-#                     <s:Body>
-#                         <SignalConnector xmlns="http://tempuri.org/">
-#                             <messageProperties xmlns:b="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalingDataModel" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-#                                 <RequestId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">2f2ab3af-5e56-45a7-865e-bb3243f06d00</RequestId>
-#                                 <SessionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">00000000-0000-0000-0000-000000000000</SessionId>
-#                                 <SubscriptionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">[redacted]</SubscriptionId>
-#                                 <TransactionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">9c3f0681-e562-4d1d-8f4c-9ef5357ba040</TransactionId>
-#                                 <b:OverrideServiceHostEnabled>true</b:OverrideServiceHostEnabled>
-#                                 <b:OverridenReturnHost>vm7-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:OverridenReturnHost>
-#                                 <b:OverridenReturnPort>443</b:OverridenReturnPort>
-#                                 <b:ReturnHost>vm7-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:ReturnHost>
-#                                 <b:ReturnPort>10100</b:ReturnPort>
-#                                 <b:TunnelContext>
-#                                     <ConfigurationHash xmlns="">-139793387</ConfigurationHash>
-#                                     <CorrelationId xmlns="">9c3f0681-e562-4d1d-8f4c-9ef5357ba040</CorrelationId>
-#                                     <HasPayload xmlns="">false</HasPayload>
-#                                     <ProtocolContext i:type="ConnectContext" xmlns="">
-#                                         <TrafficProtocol>Connect</TrafficProtocol>
-#                                         <ConnectionId>8457828f-e336-44bf-b967-4044b1478cc1</ConnectionId>
-#                                     </ProtocolContext>
-#                                 </b:TunnelContext>
-#                             </messageProperties>
-#                         </SignalConnector>
-#                     </s:Body>
-#                 </s:Envelope>
-#                 """
-#                 msg["Type"] = "SignalConnector"
-#                 msg.add("RequeIdentifierstId", xml_root.find('.//r:Identifier', namespaces).text)
-#                 msg.add("MessageNumber", xml_root.find('.//r:MessageNumber', namespaces).text)
-#                 msg.add("RequestId", xml_root.find('.//RequestId', namespaces).text)
-#                 msg.add("SessionId", xml_root.find('.//SessionId', namespaces).text)
-#                 msg.add("SubscriptionId", xml_root.find('.//SubscriptionId', namespaces).text)
-#                 msg.add("TransactionId", xml_root.find('.//TransactionId', namespaces).text)
-#                 msg.add("ConnectionId", xml_root.find('.//ConnectionId', namespaces).text)
-#                 msg.add("ReturnHost", xml_root.find('.//b:ReturnHost', namespaces).text)
-#                 msg.add("ReturnPort", xml_root.find('.//b:ReturnPort', namespaces).text)
+            elif traffic_protocol == "PasswordValidation":
+                """
+                <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+                    <s:Header>
+                        <a:Action s:mustUnderstand="1">http://tempuri.org/IConnectorSignalingService/SignalConnector</a:Action>
+                        <a:MessageID>urn:uuid:5a445862-847b-44f6-a076-3a42ba286999</a:MessageID>
+                        <a:ReplyTo>
+                            <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
+                        </a:ReplyTo>
+                        <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7</a:To>
+                    </s:Header>
+                    <s:Body>
+                        <SignalConnector xmlns="http://tempuri.org/">
+                            <messageProperties xmlns:b="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalingDataModel" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+                                <RequestId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">dff0f331-bb52-4cd0-9b6f-b741343d6d00</RequestId>
+                                <SessionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">00000000-0000-0000-0000-000000000000</SessionId>
+                                <SubscriptionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">[redacted]</SubscriptionId>
+                                <TransactionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">41bf611b-36d5-42d3-9151-2be2477279f4</TransactionId>
+                                <b:OverrideServiceHostEnabled>true</b:OverrideServiceHostEnabled>
+                                <b:OverridenReturnHost>vm4-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:OverridenReturnHost>
+                                <b:OverridenReturnPort>443</b:OverridenReturnPort>
+                                <b:ReturnHost>vm4-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:ReturnHost>
+                                <b:ReturnPort>10100</b:ReturnPort>
+                                <b:TunnelContext>
+                                    <ConfigurationHash xmlns="">-139793387</ConfigurationHash>
+                                    <CorrelationId xmlns="">41bf611b-36d5-42d3-9151-2be2477279f4</CorrelationId>
+                                    <HasPayload xmlns="">false</HasPayload>
+                                    <ProtocolContext i:type="PasswordValidationContext" xmlns="">
+                                        <TrafficProtocol>PasswordValidation</TrafficProtocol>
+                                        <Domain>AADSECURITY</Domain>
+                                        <EncryptedData>
+                                            <b:EncryptedOnPremValidationData>
+                                                            <b:Base64EncryptedData>qopI[redacted]K4NFs8fgmzNaA0XL41w==</b:Base64EncryptedData>
+                                                            <b:KeyIdentifer>[redacted]_44C483C48946CF3BAC85D22018EB134FB4B6460D</b:KeyIdentifer>
+                                            </b:EncryptedOnPremValidationData>
+                                            <b:EncryptedOnPremValidationData>
+                                                            <b:Base64EncryptedData>QZdwL[redacted]nP94w4/meAYX0w==</b:Base64EncryptedData>
+                                                            <b:KeyIdentifer>[redacted]_0CAF09C29EFA51DAFA91528949B253F977ED763D</b:KeyIdentifer>
+                                            </b:EncryptedOnPremValidationData>
+                                            <b:EncryptedOnPremValidationData>
+                                                            <b:Base64EncryptedData>flQwZQ[redacted]EtAetg==</b:Base64EncryptedData>
+                                                            <b:KeyIdentifer>[redacted]_893657AEAE25D4C913BCF37CB138628772BE1B52</b:KeyIdentifer>
+                                            </b:EncryptedOnPremValidationData>
+                                        </EncryptedData>
+                                        <Password/>
+                                        <UserPrincipalName>AllanD@[redacted]</UserPrincipalName>
+                                    </ProtocolContext>
+                                </b:TunnelContext>
+                            </messageProperties>
+                        </SignalConnector>
+                    </s:Body>
+                </s:Envelope>
+                """
+                msg["Type"] = "PasswordValidation"
+                msg.add("RequestId", xml_root.find('.//RequestId', namespaces).text)
+                msg.add("SessionId", xml_root.find('.//SessionId', namespaces).text)
+                msg.add("SubscriptionId", xml_root.find('.//SubscriptionId', namespaces).text)
+                msg.add("TransactionId", xml_root.find('.//TransactionId', namespaces).text)
+                msg.add("CorrelationId", xml_root.find('.//CorrelationId', namespaces).text)
+                msg.add("ReturnHost", xml_root.find('.//b:ReturnHost', namespaces).text)
+                msg.add("ReturnPort", xml_root.find('.//b:ReturnPort', namespaces).text)
+                msg.add("UserPrincipalName", xml_root.find('.//UserPrincipalName', namespaces).text)
 
-#             elif traffic_protocol == "PasswordValidation":
-#                 """
-#                 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
-#                     <s:Header>
-#                         <a:Action s:mustUnderstand="1">http://tempuri.org/IConnectorSignalingService/SignalConnector</a:Action>
-#                         <a:MessageID>urn:uuid:5a445862-847b-44f6-a076-3a42ba286999</a:MessageID>
-#                         <a:ReplyTo>
-#                             <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
-#                         </a:ReplyTo>
-#                         <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7</a:To>
-#                     </s:Header>
-#                     <s:Body>
-#                         <SignalConnector xmlns="http://tempuri.org/">
-#                             <messageProperties xmlns:b="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.SignalingDataModel" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-#                                 <RequestId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">dff0f331-bb52-4cd0-9b6f-b741343d6d00</RequestId>
-#                                 <SessionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">00000000-0000-0000-0000-000000000000</SessionId>
-#                                 <SubscriptionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">[redacted]</SubscriptionId>
-#                                 <TransactionId xmlns="http://schemas.datacontract.org/2004/07/Microsoft.ApplicationProxy.Common.RequestContexts">41bf611b-36d5-42d3-9151-2be2477279f4</TransactionId>
-#                                 <b:OverrideServiceHostEnabled>true</b:OverrideServiceHostEnabled>
-#                                 <b:OverridenReturnHost>vm4-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:OverridenReturnHost>
-#                                 <b:OverridenReturnPort>443</b:OverridenReturnPort>
-#                                 <b:ReturnHost>vm4-proxy-pta-WUS-SJC01P-3.connector.his.msappproxy.net</b:ReturnHost>
-#                                 <b:ReturnPort>10100</b:ReturnPort>
-#                                 <b:TunnelContext>
-#                                     <ConfigurationHash xmlns="">-139793387</ConfigurationHash>
-#                                     <CorrelationId xmlns="">41bf611b-36d5-42d3-9151-2be2477279f4</CorrelationId>
-#                                     <HasPayload xmlns="">false</HasPayload>
-#                                     <ProtocolContext i:type="PasswordValidationContext" xmlns="">
-#                                         <TrafficProtocol>PasswordValidation</TrafficProtocol>
-#                                         <Domain>AADSECURITY</Domain>
-#                                         <EncryptedData>
-#                                             <b:EncryptedOnPremValidationData>
-#                                                             <b:Base64EncryptedData>qopI[redacted]K4NFs8fgmzNaA0XL41w==</b:Base64EncryptedData>
-#                                                             <b:KeyIdentifer>[redacted]_44C483C48946CF3BAC85D22018EB134FB4B6460D</b:KeyIdentifer>
-#                                             </b:EncryptedOnPremValidationData>
-#                                             <b:EncryptedOnPremValidationData>
-#                                                             <b:Base64EncryptedData>QZdwL[redacted]nP94w4/meAYX0w==</b:Base64EncryptedData>
-#                                                             <b:KeyIdentifer>[redacted]_0CAF09C29EFA51DAFA91528949B253F977ED763D</b:KeyIdentifer>
-#                                             </b:EncryptedOnPremValidationData>
-#                                             <b:EncryptedOnPremValidationData>
-#                                                             <b:Base64EncryptedData>flQwZQ[redacted]EtAetg==</b:Base64EncryptedData>
-#                                                             <b:KeyIdentifer>[redacted]_893657AEAE25D4C913BCF37CB138628772BE1B52</b:KeyIdentifer>
-#                                             </b:EncryptedOnPremValidationData>
-#                                         </EncryptedData>
-#                                         <Password/>
-#                                         <UserPrincipalName>AllanD@[redacted]</UserPrincipalName>
-#                                     </ProtocolContext>
-#                                 </b:TunnelContext>
-#                             </messageProperties>
-#                         </SignalConnector>
-#                     </s:Body>
-#                 </s:Envelope>
-#                 """
-#                 msg["Type"] = "PasswordValidation"
-#                 msg.add("RequestId", xml_root.find('.//RequestId', namespaces).text)
-#                 msg.add("SessionId", xml_root.find('.//SessionId', namespaces).text)
-#                 msg.add("SubscriptionId", xml_root.find('.//SubscriptionId', namespaces).text)
-#                 msg.add("TransactionId", xml_root.find('.//TransactionId', namespaces).text)
-#                 msg.add("CorrelationId", xml_root.find('.//CorrelationId', namespaces).text)
-#                 msg.add("ReturnHost", xml_root.find('.//b:ReturnHost', namespaces).text)
-#                 msg.add("ReturnPort", xml_root.find('.//b:ReturnPort', namespaces).text)
-#                 msg.add("UserPrincipalName", xml_root.find('.//UserPrincipalName', namespaces).text)
-
-#                 encdata = xml_root.findall('.//b:Base64EncryptedData', namespaces)
-#                 identifiers = xml_root.findall('.//b:KeyIdentifer', namespaces)
-#                 encryptedData = []
-#                 for i in range(len(encdata)):
-#                     encryptedData.append({
-#                         "Base64EncryptedData": encdata[i],
-#                         "KeyIdentifer": identifiers[i]
-#                     })
-#                 msg.add("EncryptedData", encryptedData)
+                encdata = xml_root.findall('.//b:Base64EncryptedData', namespaces)
+                identifiers = xml_root.findall('.//b:KeyIdentifer', namespaces)
+                encryptedData = []
+                for i in range(len(encdata)):
+                    encryptedData.append({
+                        "Base64EncryptedData": encdata[i],
+                        "KeyIdentifer": identifiers[i]
+                    })
+                msg.add("EncryptedData", encryptedData)
 
 
-#         except AttributeError:
-#             pass
+        except AttributeError:
+            pass
 
-#     elif message_type == "http://www.w3.org/2005/08/addressing/soap/fault":
-#         """
-#         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
-#             <s:Header>
-#                 <a:Action s:mustUnderstand="1">http://www.w3.org/2005/08/addressing/soap/fault</a:Action>
-#                 <a:To s:mustUnderstand="1">sb://his-nam1-ncus1.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
-#             </s:Header>
-#             <s:Body>
-#                 <s:Fault>
-#                     <s:Code>
-#                         <s:Value>s:Sender</s:Value>
-#                         <s:Subcode>
-#                             <s:Value xmlns:a="http://schemas.xmlsoap.org/ws/2005/02/rm">a:UnknownSequence</s:Value>
-#                         </s:Subcode>
-#                     </s:Code>
-#                     <s:Reason>
-#                         <s:Text xml:lang="en-US">The value of wsrm:Identifier is not a known Sequence identifier.</s:Text>
-#                     </s:Reason>
-#                     <s:Detail>
-#                         <r:Identifier xmlns:r="http://schemas.xmlsoap.org/ws/2005/02/rm">urn:uuid:4213aeec-4fa2-459e-89d4-5fa8e58cf1bb</r:Identifier>
-#                     </s:Detail>
-#                 </s:Fault>
-#             </s:Body>
-#         </s:Envelope>
-#         """
-#         msg["Type"] = "Fault"
-#         try:
-#             value = xml_root.find('.//s:Value', namespaces).text
-#             reason = xml_root.find('.//s:Text', namespaces).text
-#             msg.add("Value", value)
-#             msg.add("Reason", reason)
-#         except AttributeError:
-#             pass
+    elif message_type == "http://www.w3.org/2005/08/addressing/soap/fault":
+        """
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+            <s:Header>
+                <a:Action s:mustUnderstand="1">http://www.w3.org/2005/08/addressing/soap/fault</a:Action>
+                <a:To s:mustUnderstand="1">sb://his-nam1-ncus1.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
+            </s:Header>
+            <s:Body>
+                <s:Fault>
+                    <s:Code>
+                        <s:Value>s:Sender</s:Value>
+                        <s:Subcode>
+                            <s:Value xmlns:a="http://schemas.xmlsoap.org/ws/2005/02/rm">a:UnknownSequence</s:Value>
+                        </s:Subcode>
+                    </s:Code>
+                    <s:Reason>
+                        <s:Text xml:lang="en-US">The value of wsrm:Identifier is not a known Sequence identifier.</s:Text>
+                    </s:Reason>
+                    <s:Detail>
+                        <r:Identifier xmlns:r="http://schemas.xmlsoap.org/ws/2005/02/rm">urn:uuid:4213aeec-4fa2-459e-89d4-5fa8e58cf1bb</r:Identifier>
+                    </s:Detail>
+                </s:Fault>
+            </s:Body>
+        </s:Envelope>
+        """
+        msg["Type"] = "Fault"
+        try:
+            value = xml_root.find('.//s:Value', namespaces).text
+            reason = xml_root.find('.//s:Text', namespaces).text
+            msg.add("Value", value)
+            msg.add("Reason", reason)
+        except AttributeError:
+            pass
 
-#     elif message_type == "http://schemas.xmlsoap.org/ws/2005/02/rm/AckRequested":
-#         """
-#         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:r="http://schemas.xmlsoap.org/ws/2005/02/rm" xmlns:a="http://www.w3.org/2005/08/addressing">
-#             <s:Header>
-#                 <r:AckRequested>
-#                     <r:Identifier>urn:uuid:bcb65644-d0f1-4a11-adaf-ff844eb5f4ea</r:Identifier>
-#                 </r:AckRequested>
-#                 <a:Action s:mustUnderstand="1">http://schemas.xmlsoap.org/ws/2005/02/rm/AckRequested</a:Action>
-#                 <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
-#             </s:Header>
-#             <s:Body/>
-#         </s:Envelope>
-#         """
-#         msg["Type"] = "AckRequested"
-#         try:
-#             identifier = xml_root.find('.//r:Identifier', namespaces).text
-#             to = xml_root.find('.//a:To', namespaces).text
-#             msg.add("Identifier", identifier)
-#             msg.add("To", to)
-#         except AttributeError:
-#             pass
+    elif message_type == "http://schemas.xmlsoap.org/ws/2005/02/rm/AckRequested":
+        """
+        <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:r="http://schemas.xmlsoap.org/ws/2005/02/rm" xmlns:a="http://www.w3.org/2005/08/addressing">
+            <s:Header>
+                <r:AckRequested>
+                    <r:Identifier>urn:uuid:bcb65644-d0f1-4a11-adaf-ff844eb5f4ea</r:Identifier>
+                </r:AckRequested>
+                <a:Action s:mustUnderstand="1">http://schemas.xmlsoap.org/ws/2005/02/rm/AckRequested</a:Action>
+                <a:To s:mustUnderstand="1">sb://his-nam1-wus2.servicebus.windows.net/[redacted]_17d93d40-1389-4f69-b6f6-dcaedfdc4bb7_reliable</a:To>
+            </s:Header>
+            <s:Body/>
+        </s:Envelope>
+        """
+        msg["Type"] = "AckRequested"
+        try:
+            identifier = xml_root.find('.//r:Identifier', namespaces).text
+            to = xml_root.find('.//a:To', namespaces).text
+            msg.add("Identifier", identifier)
+            msg.add("To", to)
+        except AttributeError:
+            pass
 
-#     return msg
+    return msg
 
 
 # def parse_relay_message(message_bytes: bytes) -> Union[None, ParsedMessage]:

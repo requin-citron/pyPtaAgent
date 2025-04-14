@@ -1,6 +1,8 @@
 import asyncio, requests
 import xml.etree.ElementTree as ET
+from typing import Dict, Optional
 
+from relay_client import RelaySettings
 from servicebus_client import ServiceBusWebSocketClient
 from logger import logger
 
@@ -50,6 +52,27 @@ class Settings:
         self.service_path = service_path
         self.cert_file = cert_file
         self.key_file = key_file
+
+class RelayManager:
+    def __init__(self):
+        self.relays: Dict[str, RelaySettings] = {}
+        self.lock = asyncio.Lock()
+
+    async def add_relay(self, relay_id: str, settings: RelaySettings):
+        async with self.lock:
+            if relay_id not in self.relays:
+                self.relays[relay_id] = settings
+                return True
+            return False
+
+    async def get_relay(self, relay_id: str) -> Optional[RelaySettings]:
+        async with self.lock:
+            return self.relays.get(relay_id)
+
+    async def remove_relay(self, relay_id: str):
+        async with self.lock:
+            if relay_id in self.relays:
+                del self.relays[relay_id]
 
 class PTAAgent:
     def __init__(self, cert_file: str, keyfile: str, tenantid: str) -> None:
@@ -102,6 +125,7 @@ class PTAAgent:
             return None
         logger.info(f'Starting listener on settings {idx}')
         settings = self.all_settings[idx]
+        relay_manager = RelayManager()
         client = ServiceBusWebSocketClient(
             namespace=settings.namespace,
             cert_file=settings.cert_file,
@@ -109,6 +133,7 @@ class PTAAgent:
             shared_access_key_name=settings.access_key_name,
             shared_access_key=settings.access_key,
             service_path=settings.service_path,
+            relay_manager=relay_manager,
             thread_id=idx
         )        
         await asyncio.gather(client.run(1))
@@ -116,6 +141,7 @@ class PTAAgent:
     async def run_all(self) -> None:
         logger.info('Starting listeners on all settings')
         clients = []
+        relay_manager = RelayManager()
         for idx, settings in enumerate(self.all_settings):
             client = ServiceBusWebSocketClient(
                 namespace=settings.namespace,
@@ -124,6 +150,7 @@ class PTAAgent:
                 shared_access_key_name=settings.access_key_name,
                 shared_access_key=settings.access_key,
                 service_path=settings.service_path,
+                relay_manager=relay_manager,
                 thread_id=idx
             )
             clients.append(client)
