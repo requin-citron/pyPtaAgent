@@ -116,6 +116,7 @@ class RelayWebSocketClient:
     async def loop(self):
         try:
             while True:
+                print('#'*50)
                 parsed = await self.recv()
                 print(parsed.to_dict())
                 _type = parsed["Type"]
