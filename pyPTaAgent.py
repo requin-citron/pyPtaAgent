@@ -51,7 +51,8 @@ def main():
         keyfile=args.key,
         tenantid=tenantid
     )
-    asyncio.run(agent.run_all())
+    #asyncio.run(agent.run_all())
+    asyncio.run(agent.run(3))
 
 
 if __name__ == '__main__':

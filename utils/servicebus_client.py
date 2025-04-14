@@ -37,6 +37,7 @@ class ServiceBusWebSocketClient:
         self.oneway_send_message = 0   
         self.relay_manager = relay_manager
         self.thread_id = str(thread_id)
+        self.tasks = set()
         self.color = COLORS[thread_id % len(COLORS)]
         self.logger = configure_custom_logger(logs_dir="./logs", color=self.color, thread_id=self.thread_id)
         
@@ -75,12 +76,17 @@ class ServiceBusWebSocketClient:
         ssl_context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
 
         self.logger.info(" Tentative de connexion à Azure Service Bus WebSocket...")
-        self.ws = await websockets.connect(
-            f"wss://{self.namespace}.servicebus.windows.net/$servicebus/websocket",
-            subprotocols=["wsrelayedamqp"],
-            ssl=ssl_context
-        )
-        self.logger.info("Connected!")
+        try:
+            self.ws = await websockets.connect(
+                f"wss://{self.namespace}.servicebus.windows.net/$servicebus/websocket",
+                subprotocols=["wsrelayedamqp"],
+                ssl=ssl_context
+            )
+            self.logger.info("Connected!")
+        except Exception as ex:
+            self.logger.error(f"Error while connecting to Service Bus WebSocket ({type(ex).__name__}): {ex}")
+            return False
+        return True
 
     async def setup_connection(self) -> None:
         if not self.ws:
@@ -173,7 +179,8 @@ class ServiceBusWebSocketClient:
                                 self.logger.warning(f"Creating relay {relay_id}")
                                 await self.send(RelayedAccept(relay_id).to_byte_array())
                                 agent = RelayWebSocketClient(settings, self.thread_id, self.logger)
-                                asyncio.create_task(agent.run())
+                                task = asyncio.create_task(agent.run())
+                                self.tasks.add(task)
                             else:
                                 self.logger.info(f"Relay {relay_id} already exists")
                         except Exception as ex:
@@ -183,20 +190,24 @@ class ServiceBusWebSocketClient:
                         continue
                 await asyncio.sleep(1)
         except websockets.exceptions.ConnectionClosed:
-            self.logger.info("Connection closed by peer")
+            self.logger.info("Connection with service bus closed by peer")
         except Exception as ex:
             self.logger.error(f"Main loop error ({type(ex).__name__}): {ex}")
         finally:
             await self.ws.close()
-        
-            
+            self.logger.info(f"Loop ended")
+            if self.tasks:
+                self.logger.info(f"Waiting for {len(self.tasks)} relays to complete")
+                await asyncio.gather(*self.tasks, return_exceptions=True)
+
     async def run(self, thread_id: int) -> None:
         self.logger.info(f"Connecting with thread N°{thread_id}")
-        await self.connect()
+        if not await self.connect():
+            return
 
         self.logger.info(f"Initializing connection with thread N°{thread_id}")
         await self.setup_connection()
 
         self.logger.info(f"Looping with thread N°{thread_id}")
         await self.loop()
-        self.logger.info(f"Loop ended for thread N°{thread_id}")
+        self.logger.info(f"Thread N°{thread_id} terminated")

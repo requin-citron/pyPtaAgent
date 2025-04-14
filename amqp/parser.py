@@ -202,10 +202,15 @@ def parse_bus_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
         return parse_amqp_frame(message_bytes)
 
 
-def parse_relay_binary_xml(bytes_data, no_session={}):        
+def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):        
     msg = ParsedMessage(bytes_data)
     msg.add("Type", "RelayMessage")
-    xml_string = XmlParser(io.BytesIO(bytes_data)).unserialize()
+    xml_string = XmlParser(io.BytesIO(bytes_data[pos:])).unserialize()
+    
+    session = {}
+    if not no_session:
+        pass
+
     try:
         xml_root = ET.fromstring(xml_string)
         namespaces = {
@@ -512,27 +517,26 @@ def parse_relay_binary_xml(bytes_data, no_session={}):
     return msg
 
 
-# def parse_relay_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
-#     if message_bytes and len(message_bytes) > 3:
-#         msg_type = message_bytes[0]
-#         if msg_type == 0x56:
-#             return parse_relay_binary_xml(message_bytes, 0, True)
-#         elif msg_type == 0x06:
-#             pos = 1
-#             size = parse_multi_byte_int31(message_bytes, pos)
-#             return parse_relay_binary_xml(message_bytes, pos)
-#         elif msg_type in [0x07, 0xAA, 0x98, 0x00]:
-#             message = ParsedMessage(message_bytes)
-#             if msg_type == 0x07:
-#                 message.add("Type", "Disconnect")
-#             elif msg_type == 0xAA:
-#                 message.add("Type", "RelayResponseError")
-#             elif msg_type == 0x98:
-#                 message.add("Type", "RelayResponseOk")
-#             elif msg_type == 0x00:
-#                 message.add("Type", "RelaySB")
-#                 sb_size = message_bytes[6]
-#                 sb_string = message_bytes[7:7+sb_size].decode('utf-8')
-#                 message.add("SB", sb_string)
-#             return message
-#     return None
+def parse_relay_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
+    if message_bytes and len(message_bytes) > 3:
+        msg_type = message_bytes[0]
+        if msg_type == 0x56:
+            return parse_relay_binary_xml(message_bytes, 0, True)
+        elif msg_type == 0x06:
+            pos = 1
+            return parse_relay_binary_xml(message_bytes, pos, False)
+        elif msg_type in [0x07, 0xAA, 0x98, 0x00]:
+            message = ParsedMessage(message_bytes)
+            if msg_type == 0x07:
+                message.add("Type", "Disconnect")
+            elif msg_type == 0xAA:
+                message.add("Type", "RelayResponseError")
+            elif msg_type == 0x98:
+                message.add("Type", "RelayResponseOk")
+            elif msg_type == 0x00:
+                message.add("Type", "RelaySB")
+                sb_size = message_bytes[6]
+                sb_string = message_bytes[7:7+sb_size].decode('utf-8')
+                message.add("SB", sb_string)
+            return message
+    return None
