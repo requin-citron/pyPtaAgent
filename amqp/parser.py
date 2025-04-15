@@ -1,4 +1,5 @@
 from amqp.parser_type import ParsedMessage, parse_amqp_item, parse_amqp_list
+from utils import logger
 from xml_parser import XmlParser
 
 import base64, io
@@ -205,12 +206,15 @@ def parse_bus_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
 def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):        
     msg = ParsedMessage(bytes_data)
     msg.add("Type", "RelayMessage")
-    xml_string = XmlParser(io.BytesIO(bytes_data[pos:])).unserialize()
+    xml_string = XmlParser(bytes_data[pos:]).unserialize()
     
     session = {}
     if not no_session:
+        # Already Handle in XmlParser
         pass
-
+    
+    logger.debug(f"XML unserialized: \n{xml_string}")
+        
     try:
         xml_root = ET.fromstring(xml_string)
         namespaces = {
@@ -220,7 +224,9 @@ def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):
             'i': "http://www.w3.org/2001/XMLSchema-instance",
             'r': "http://schemas.xmlsoap.org/ws/2005/02/rm",
             's': "http://www.w3.org/2003/05/soap-envelope",
-            'sb': "http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect"
+            'sb': "http://schemas.microsoft.com/netservices/2009/05/servicebus/relayedconnect",
+            'wsrm': 'http://schemas.xmlsoap.org/ws/2005/02/rm'
+
         }
         header_node = xml_root.find('.//s:Header', namespaces)
         if header_node is not None:
@@ -253,7 +259,7 @@ def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):
         """
         body = msg.info.get("Body", "")
         bin_body = base64.b64decode(body.encode())
-        relayed_xml_string = XmlParser(io.BytesIO(bin_body)).unserialize()
+        relayed_xml_string = XmlParser(bin_body).unserialize()
         relayed_xml_root = ET.fromstring(relayed_xml_string)
         """
         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
@@ -317,7 +323,7 @@ def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):
         """
         msg["Type"] = "CreateSequence"
         try:
-            identifier = xml_root.find('.//Identifier', namespaces).text
+            identifier = xml_root.find('.//wsrm:Identifier', namespaces).text
             msg.add("Identifier", identifier)
         except ET.ParseError:
             pass
@@ -536,7 +542,7 @@ def parse_relay_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
             elif msg_type == 0x00:
                 message.add("Type", "RelaySB")
                 sb_size = message_bytes[6]
-                sb_string = message_bytes[7:7+sb_size].decode('utf-8')
+                sb_string = message_bytes[8:8+sb_size].decode('utf-8')
                 message.add("SB", sb_string)
             return message
     return None

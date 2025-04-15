@@ -12,5 +12,6 @@ def tenantid_lookup(domain: str) -> str:
             tenant_id = data["token_endpoint"].split("/")[3]
             return tenant_id
         return None
-    except:
-        pass
+    except Exception as ex:
+        logger.error('Failed to resolve domain from tenantid: Network error')
+        exit(1)

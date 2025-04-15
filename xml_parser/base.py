@@ -42,6 +42,19 @@ class Record(object):
         args = ['type=0x%X' % self.type]
         return '<%s(%s)>' % (type(self).__name__, ','.join(args))
 
+    def extract_inband_elements(self, data):
+        """
+        Extract in-band elements transmitted into the packet.
+        Those elements are used to update the StringTable kept in memory at client and server sides.
+        """
+        i = 0
+        elements = []
+        while i < len(data):
+            next_len = int(data[i].encode('hex'), 16)
+            elements.append(data[i+1:i+1+next_len])
+            i = i+1+next_len
+        return elements
+
     def to_string(self, records: str, skip: int = 0, first_call: bool = True, output: str = "") -> tuple[bool, str]:
         """Convertit une liste d'enregistrements en chaîne XML
         
@@ -80,6 +93,20 @@ class Record(object):
         return was_el, output
 
     @classmethod
+    def extract_inband_elements(cls, data):
+        """
+        Extract in-band elements transmitted into the packet.
+        Those elements are used to update the StringTable kept in memory at client and server sides.
+        """
+        i = 0
+        elements = []
+        while i < len(data):
+            next_len = int(bytes([data[i]]).hex(), 16)
+            elements.append(data[i+1:i+1+next_len])
+            i = i+1+next_len
+        return elements
+
+    @classmethod
     def parse(cls, fp) -> list:
         """Parse un flux de bytes en enregistrements XML
         
@@ -96,6 +123,7 @@ class Record(object):
         last_el: Element = None
         type: int = True
         records: list = root
+        
         while type:
             type = fp.read(1)
             if type:

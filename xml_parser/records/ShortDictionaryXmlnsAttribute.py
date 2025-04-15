@@ -12,7 +12,7 @@ class ShortDictionaryXmlnsAttributeRecord(Attribute):
     Cette classe étend Attribute pour gérer les attributs XMLNS référencés dans un dictionnaire,
     avec une représentation optimisée pour les petits index.
     """
-    type: int = 0x09
+    type: int = 0x0a
 
     def __init__(self, index: int, *args, **kwargs) -> None:
         """Initialise un attribut XMLNS de dictionnaire court

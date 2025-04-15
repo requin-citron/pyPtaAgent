@@ -101,4 +101,5 @@ class Utf8String(object):
         >>> print str(s)
         """
         length = struct.unpack('<B', fp.read(1))[0]
+        return cls(str(fp.read(length))[2:-1])
         return cls(fp.read(length).decode('utf-8'))
