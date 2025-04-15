@@ -77,7 +77,7 @@ class RelayWebSocketClient:
     async def connect(self) -> None:
         ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ssl_context.load_cert_chain(certfile=self.settings.cert_file, keyfile=self.settings.key_file)
-        self.logger.info(" Tentative de connexion à Azure Service Bus WebSocket...")
+        self.logger.info("Tentative de connexion à Azure Service Bus WebSocket...")
         try:
             self.ws = await websockets.connect(
                 f"wss://{self.settings.host_name}/$servicebus/websocket",

@@ -133,5 +133,13 @@ class PTAAgent:
                 thread_id=idx
             )
             clients.append(client)
-        tasks = [client.run(thread_id) for thread_id, client in enumerate(clients)]
-        await asyncio.gather(*tasks)
+        
+        tasks = set()
+        for client in clients:
+            task = asyncio.create_task(client.run(idx))
+            tasks.add(task)
+        
+        try:
+            await asyncio.gather(*tasks)
+        except KeyboardInterrupt:
+            pass

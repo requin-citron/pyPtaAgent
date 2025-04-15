@@ -203,15 +203,10 @@ def parse_bus_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
         return parse_amqp_frame(message_bytes)
 
 
-def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):        
+def parse_relay_binary_xml(bytes_data, pos: int = 0):        
     msg = ParsedMessage(bytes_data)
     msg.add("Type", "RelayMessage")
     xml_string = XmlParser(bytes_data[pos:]).unserialize()
-    
-    session = {}
-    if not no_session:
-        # Already Handle in XmlParser
-        pass
     
     logger.debug(f"XML unserialized: \n{xml_string}")
         
@@ -527,10 +522,9 @@ def parse_relay_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
     if message_bytes and len(message_bytes) > 3:
         msg_type = message_bytes[0]
         if msg_type == 0x56:
-            return parse_relay_binary_xml(message_bytes, 0, True)
+            return parse_relay_binary_xml(message_bytes, 0)
         elif msg_type == 0x06:
-            pos = 1
-            return parse_relay_binary_xml(message_bytes, pos, False)
+            return parse_relay_binary_xml(message_bytes, 1)
         elif msg_type in [0x07, 0xAA, 0x98, 0x00]:
             message = ParsedMessage(message_bytes)
             if msg_type == 0x07:

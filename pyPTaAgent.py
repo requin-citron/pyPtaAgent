@@ -38,7 +38,8 @@ def parse_args():
     # Optional arguments
     parser.add_argument('-v', '--verbose', action='store_true',
                       help='Enable verbose output (DEBUG level)')
-    
+    parser.add_argument('--single', type=int,
+                      help='Run a single instance with the specified ID')
     return parser.parse_args()
 
 def main():
@@ -51,9 +52,10 @@ def main():
         keyfile=args.key,
         tenantid=tenantid
     )
-    # asyncio.run(agent.run_all())
-    asyncio.run(agent.run(3))
-
+    if args.single is not None:
+        asyncio.run(agent.run(args.single))
+    else:
+        asyncio.run(agent.run_all())
 
 if __name__ == '__main__':
     main()

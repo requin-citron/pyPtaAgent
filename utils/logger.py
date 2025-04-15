@@ -35,7 +35,7 @@ def configure_custom_logger(logs_dir, color: Optional[str] = None, thread_id: Op
     logs_dir = os.path.join(os.getcwd(), logs_dir)
     logger = logging.getLogger(f'pyPTAagent_{thread_id}')
     logger.setLevel(default_level)
-    formatter = f'%(asctime)s - Thread {thread_id} - %(levelname)s - %(message)s'
+    formatter = f'%(asctime)s - Thread {str(thread_id).rjust(4)} - %(levelname)-6s - %(message)s'
     log_file = os.path.join(logs_dir, 'app.log')
     file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024, backupCount=10)
     file_handler.setFormatter(logging.Formatter(formatter))

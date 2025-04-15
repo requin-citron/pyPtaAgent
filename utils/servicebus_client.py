@@ -75,7 +75,7 @@ class ServiceBusWebSocketClient:
         ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ssl_context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
 
-        self.logger.info(" Tentative de connexion à Azure Service Bus WebSocket...")
+        self.logger.info("Tentative de connexion à Azure Service Bus WebSocket...")
         try:
             self.ws = await websockets.connect(
                 f"wss://{self.namespace}.servicebus.windows.net/$servicebus/websocket",
