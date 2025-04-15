@@ -1,12 +1,11 @@
-from email.policy import default
 import logging
 import asyncio
-import math
+import uuid
 import ssl
 from typing import Optional
 import websockets
 
-from amqp.relay import RelayInit, RelayedAccept
+from amqp.relay import RelayInit, RelayedAccept, CreateSequenceResponse
 from amqp.parser import parse_relay_message
 
 COLORS = [
@@ -129,6 +128,17 @@ class RelayWebSocketClient:
                     case "Disconnect":
                         return
                     case "CreateSequence":
+                        # https://github.com/secureworks/PTAAgentDump/blob/648b7ef625b28ec5c478c4399b4a371525bda1b7/PTAAgent.cs#L383-L390
+                        """
+                        string serviceBus = parsedMessage["To"].ToString();
+                        connectionId = Guid.Parse(parsedMessage["MessageID"].ToString().Split(':')[2]);
+                        sequenceId = Guid.Parse(parsedMessage["Identifier"].ToString().Split(':')[2]);
+                        SendToSocket(socket, token, new CreateSequenceResponse(connectionId, Guid.NewGuid(), serviceBus));
+                        """
+                        serviceBus = parsed["To"]
+                        connectionId = parsed["MessageID"].split(':')[2]
+                        #sequenceId = parsed["Identifier"].split(':')[2]
+                        await self.send(CreateSequenceResponse(connectionId, str(uuid.uuid4()), serviceBus).to_byte_array())
                         continue
                     case "AckRequested":
                         continue
