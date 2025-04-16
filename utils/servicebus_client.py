@@ -172,7 +172,7 @@ class ServiceBusWebSocketClient:
                             await self.send(AMQPDisposition(True, 0x24, self.oneway_send_message).to_byte_array())
                             self.oneway_send_message += 1
                             
-                            parsed = parse_relay_binary_xml(bin_oneway_send)
+                            parsed = parse_relay_binary_xml(bin_oneway_send, 0, True)
                             relay_id = parsed['Id']
                             settings = RelaySettings(parsed, self.cert_file, self.key_file)
                             if await self.relay_manager.add_relay(relay_id, settings):

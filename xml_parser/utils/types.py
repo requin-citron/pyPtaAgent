@@ -5,7 +5,8 @@ class MultiByteInt31(object):
 
     def __init__(self, *args):
         self.value = args[0] if len(args) else None
-    
+        self.pos   = 0
+
     def to_bytes(self):
         """
         >>> MultiByteInt31(268435456).to_bytes()
@@ -58,13 +59,19 @@ class MultiByteInt31(object):
     @classmethod
     def parse(cls, fp):
         v = 0
-        for pos in range(4):
-            b = fp.read(1)
+        i = 0
+
+        while len(b := fp.read(1)) > 0:
             value = struct.unpack('<B', b)[0]
-            v |= (value & 0x7F) << 7*pos
+            v |= (value & 0x7F) << 7*i
+
+            i += 1
             if not value & 0x80:
                 break
-        return cls(v)
+        instance = cls(v)
+        instance.pos = i
+
+        return instance
 
 class Utf8String(object):
 
@@ -89,7 +96,7 @@ class Utf8String(object):
 
     def __unicode__(self):
 	    return self.value
-
+    
     @classmethod
     def parse(cls, fp):
         """

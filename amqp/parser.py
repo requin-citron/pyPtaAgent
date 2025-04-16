@@ -1,6 +1,7 @@
 from amqp.parser_type import ParsedMessage, parse_amqp_item, parse_amqp_list
 from utils import logger
 from xml_parser import XmlParser
+from xml_parser.utils.types import MultiByteInt31
 
 import base64, io
 from typing import Union
@@ -203,14 +204,34 @@ def parse_bus_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
         return parse_amqp_frame(message_bytes)
 
 
-def parse_relay_binary_xml(bytes_data, pos: int = 0):        
+def parse_relay_binary_xml(bytes_data, pos: int = 0, no_session: bool = False):     
     msg = ParsedMessage(bytes_data)
     msg.add("Type", "RelayMessage")
-    xml_string = XmlParser(bytes_data[pos:]).unserialize()
     
-    logger.debug(f"XML unserialized: \n{xml_string}")
+    if not no_session:
+        pass
+        #
+        # multi_byte = MultiByteInt31.parse(io.BytesIO(bytes_data[pos:]))
+        # info_size  = multi_byte.value
+        # pos        = multi_byte.pos + pos
+        # index      = 0
+
+        # while pos < info_size:
+        #     multi_byte = MultiByteInt31.parse(io.BytesIO(bytes_data[pos:]))
+        #     str_size   = multi_byte.value
+        #     pos        = multi_byte.pos
+        #     str_data   = ""
+
+        #     if str_size > 0:
+        #         str_data = bytes_data[pos:pos+str_size].decode()
+            
+        #     pos   += str_size
+        #     index += 1
         
     try:
+        xml_string = XmlParser(bytes_data[pos:]).unserialize()
+        logger.debug(f"XML unserialized: \n{xml_string}")
+
         xml_root = ET.fromstring(xml_string)
         namespaces = {
             'a': "http://www.w3.org/2005/08/addressing",
@@ -522,9 +543,12 @@ def parse_relay_message(message_bytes: bytes) -> Union[None, ParsedMessage]:
     if message_bytes and len(message_bytes) > 3:
         msg_type = message_bytes[0]
         if msg_type == 0x56:
-            return parse_relay_binary_xml(message_bytes, 0)
+            return parse_relay_binary_xml(message_bytes, 0, True)
         elif msg_type == 0x06:
-            return parse_relay_binary_xml(message_bytes, 1)
+            pos = 1
+            # multi_byte = MultiByteInt31.parse(io.BytesIO(message_bytes[pos:]))
+            # pos        += multi_byte.pos
+            return parse_relay_binary_xml(message_bytes, pos, False)
         elif msg_type in [0x07, 0xAA, 0x98, 0x00]:
             message = ParsedMessage(message_bytes)
             if msg_type == 0x07:

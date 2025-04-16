@@ -2,7 +2,7 @@ import logging
 import asyncio
 import uuid
 import ssl
-from typing import Optional
+from typing import Optional, Dict
 import websockets
 
 from amqp.relay import RelayInit, RelayedAccept, CreateSequenceResponse
@@ -115,8 +115,11 @@ class RelayWebSocketClient:
     async def loop(self):
         try:
             while True:
-                print('#'*50)
                 parsed = await self.recv()
+
+                if parsed is None:
+                    await asyncio.sleep(1)
+                    continue
                 print(parsed.to_dict())
                 _type = parsed["Type"]
                 self.logger.info(f"Received {_type} message")
